@@ -1,0 +1,83 @@
+version: '3'
+services:
+    webapp:
+        image: nginx:alpine
+        volumes:
+            - "./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf"
+            - "./docker/nginx/default.template.conf:/etc/nginx/conf.d/default.template"
+            - "./docker/ssl:/etc/ssl"
+            - "./webapp:/var/www/html"
+#            - "./logs:/var/log"
+        ports:
+            - "80:80"
+            - "443:443"
+        env_file:
+            - ".env"
+        environment:
+            - NGINX_HOST=${NGINX_HOST}
+        command: /bin/sh -c "envsubst '$$NGINX_HOST' < /etc/nginx/conf.d/default.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+        restart: always
+        depends_on:
+            - php-fpm
+            - mysqldb
+    php-fpm:
+        build:
+            context: ./docker/php-fpm/
+            args:
+                - USER_ID=${USER_ID}
+                - GROUP_ID=${GROUP_ID}
+                - PHP_VERSION=${PHP_VERSION}
+        restart: always
+        env_file:
+            - ".env"
+        environment:
+            - PHP_VERSION=${PHP_VERSION}
+            - USER_ID=${USER_ID}
+            - GROUP_ID=${GROUP_ID}
+        # user: "${UID}:${GID}"
+        volumes:
+            - "./docker/php-fpm/php.ini:/usr/local/etc/php/conf.d/php.ini"
+            - "./webapp:/var/www/html"
+    composer:
+        image: "composer"
+        user: "${USER_ID}:${GROUP_ID}"
+        volumes:
+            - "./webapp:/app"
+        command: install
+    nodejs:
+        image: node:10.15-alpine
+        user: "${USER_ID}:${GROUP_ID}"
+        volumes:
+            - "./webapp:/app"
+        working_dir: "/app"
+        environment:
+            NODE_ENV: development
+        command: >
+            sh -c "npm install &&
+                   npm run dev"
+    myadmin:
+        image: phpmyadmin/phpmyadmin
+        container_name: phpmyadmin
+        ports:
+            - "81:80"
+        environment:
+            - PMA_ARBITRARY=1
+            - PMA_HOST=${MYSQL_HOST}
+        restart: always
+        depends_on:
+            - mysqldb
+    mysqldb:
+        image: mysql:${MYSQL_VERSION}
+        container_name: ${MYSQL_HOST}
+        restart: always
+        env_file:
+            - ".env"
+        environment:
+            - MYSQL_DATABASE=${MYSQL_DATABASE}
+            - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+            - MYSQL_USER=${MYSQL_USER}
+            - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+        ports:
+            - "3306:3306"
+        volumes:
+            - "./data/mysql:/var/lib/mysql"
